@@ -1,0 +1,483 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Rob-Craft: İmla ve İlerleme Oyunu</title>
+<style>
+  body { font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif; background:#1a1a1a; color:#fff; text-align:center; margin:0; padding:20px; }
+  h1 { color:#00ffcc; text-shadow:2px 2px #000; margin-bottom:5px; font-size:26px; }
+  .sub { color:#aaa; margin-top:0; }
+  .container { display:flex; flex-wrap:wrap; justify-content:center; align-items:flex-start; gap:20px; max-width:1000px; margin:20px auto 0; }
+  .panel { background:#2a2a2a; padding:15px; border-radius:10px; border:2px solid #444; box-shadow:0 4px 10px rgba(0,0,0,.5); min-height:320px; box-sizing:border-box; }
+  #map-panel { width:370px; }
+  #quiz-area { width:520px; max-width:100%; text-align:left; }
+  #grid { display:grid; grid-template-columns:repeat(5,60px); gap:5px; background:#333; padding:10px; border-radius:8px; border:3px solid #555; justify-content:center; }
+  .cell { width:60px; height:60px; background:#28a745; border-radius:5px; display:flex; justify-content:center; align-items:center; font-size:28px; box-shadow:inset 0 0 5px rgba(0,0,0,.5); }
+  .cell.done { background:#1e7a34; }
+  .lava { background:#ff3333 !important; }
+  .diamond { background:#0b6b7a; }
+  .stats { display:flex; justify-content:space-around; margin-top:12px; font-size:14px; color:#ddd; flex-wrap:wrap; gap:6px; }
+  .bar { height:12px; background:#444; border-radius:6px; overflow:hidden; margin-top:12px; }
+  #bar-fill { height:100%; width:0; background:linear-gradient(90deg,#00ffcc,#28a745); transition:width .4s; }
+  .cat { display:inline-block; background:#444; color:#ffcc00; font-size:12px; padding:3px 8px; border-radius:10px; margin-bottom:8px; }
+  .btn-ans { display:block; width:100%; background:#0088cc; color:#fff; border:none; padding:12px; margin:10px 0; font-size:16px; font-weight:bold; border-radius:5px; cursor:pointer; text-align:left; transition:.2s; }
+  .btn-ans:hover:not(:disabled) { background:#00aaee; }
+  .btn-ans:disabled { cursor:default; opacity:.85; }
+  .btn-ans.ok { background:#28a745; }
+  .btn-ans.bad { background:#cc2222; }
+  .btn-mode { display:block; width:100%; background:#0088cc; color:#fff; border:none; padding:14px; margin:10px 0; font-size:17px; font-weight:bold; border-radius:6px; cursor:pointer; }
+  .btn-mode:hover { background:#00aaee; }
+  #message { margin-top:12px; font-size:16px; font-weight:bold; min-height:48px; }
+  .success { color:#4cd964; } .error { color:#ff5555; }
+  #hint { color:#9ad; font-size:14px; margin:0 0 6px; min-height:18px; }
+  #qtext { font-size:19px; font-weight:500; min-height:50px; white-space:pre-line; }
+</style>
+</head>
+<body>
+<h1>🎮 ROB-CRAFT: İMLA KURALINI BİL, ELMASA İLERLE!</h1>
+<p class="sub">Her doğru cevap Steve'i elmasa yaklaştırır. Yanlış cevap lavlara düşürür ve bölümün başına döndürür!</p>
+
+<div class="container">
+  <div class="panel" id="map-panel">
+    <h3 style="margin-top:0;color:#ffcc00;">🗺️ <span id="stage-title">İlerleme Yolu</span></h3>
+    <div id="grid"></div>
+    <div class="bar"><div id="bar-fill"></div></div>
+    <div class="stats">
+      <span>Soru: <b id="st-q">0</b></span>
+      <span>Hata: <b id="st-err">0</b></span>
+      <span>Seri: <b id="st-streak">0</b></span>
+    </div>
+  </div>
+  <div class="panel" id="quiz-area">
+    <div id="start-screen">
+      <h3 style="margin-top:0;color:#ffcc00;">Oyun Modunu Seç</h3>
+      <p id="bank-info" style="color:#ccc"></p>
+      <button class="btn-mode" onclick="startGame(50)">⛏️ Kısa Macera (50 soru)</button>
+      <button class="btn-mode" onclick="startGame(100)">🗡️ Orta Macera (100 soru)</button>
+      <button class="btn-mode" onclick="startGame(0)">🐉 Efsane Macera (TÜM sorular)</button>
+    </div>
+    <div id="game-screen" style="display:none">
+      <h3 id="qtitle" style="margin-top:0;color:#ffcc00;"></h3>
+      <span class="cat" id="qcat"></span>
+      <p id="hint"></p>
+      <p id="qtext"></p>
+      <div id="options"></div>
+      <div id="message"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ========== SORU BANKASI ========== */
+function L(s){return s.trim().split('\n').map(x=>x.trim()).filter(Boolean).map(x=>x.split('|'));}
+const BANK=[];
+const Q_CORRECT='Hangi cümle doğru yazılmıştır?';
+function addPairs(cat,q,data,note,hintFn){
+  L(data).forEach(r=>{
+    BANK.push({cat:cat,q:q,hint:hintFn?hintFn(r[2]):'',note:note,opts:[r[0],r[1]]});
+  });
+}
+/* --- BÜYÜK HARF --- */
+addPairs('Büyük Harf',Q_CORRECT,`
+Steve madene gitti.|steve madene gitti.
+Ayşe okula erken geldi.|ayşe okula erken geldi.
+Dün İzmir'e gittik.|Dün izmir'e gittik.
+Ankara Türkiye'nin başkentidir.|Ankara türkiye'nin başkentidir.
+Annem bana kitap aldı.|annem bana kitap aldı.
+Ali, Mehmet'e top attı.|Ali, mehmet'e top attı.
+Kızılırmak Türkiye'nin en uzun nehridir.|kızılırmak Türkiye'nin en uzun nehridir.
+Sabah erkenden kalktım.|Sabah Erkenden kalktım.
+Babam bugün işe gitmedi.|Babam Bugün işe gitmedi.
+Ege Denizi çok güzeldir.|Ege denizi çok güzeldir.
+Yarın pazartesi, sınav var.|Yarın Pazartesi, sınav var.
+Okullar eylülde açılır.|Okullar Eylülde açılır.
+Atatürk 1881'de doğdu.|atatürk 1881'de doğdu.
+Ben Türkçe ve İngilizce biliyorum.|Ben türkçe ve ingilizce biliyorum.
+Kedimin adı Pamuk.|Kedimin adı pamuk.
+Öğretmenimiz Fatma Hanım bugün gelmedi.|Öğretmenimiz fatma hanım bugün gelmedi.
+Sultanahmet Camii çok eskidir.|sultanahmet camii çok eskidir.
+Van Gölü Türkiye'nin en büyük gölüdür.|van gölü Türkiye'nin en büyük gölüdür.
+Toros Dağları güneyde yer alır.|Toros dağları güneyde yer alır.
+Uludağ'a kayak yapmaya gittik.|uludağ'a kayak yapmaya gittik.
+Soru sordu. Cevap bekledi.|Soru sordu. cevap bekledi.
+Hava soğuk. Montumu giydim.|Hava soğuk. montumu giydim.
+Ne güzel bir gün! Hemen dışarı çıktık.|Ne güzel bir gün! hemen dışarı çıktık.
+Kaç yaşındasın? Ben on yaşındayım.|Kaç yaşındasın? ben on yaşındayım.
+Karadeniz'de hava yağışlı.|karadeniz'de hava yağışlı.
+Dicle ve Fırat nehirleri Mezopotamya'dan geçer.|dicle ve fırat nehirleri Mezopotamya'dan geçer.
+Kitabı Zeynep'e verdim.|Kitabı zeynep'e verdim.
+Boğaziçi Köprüsü iki kıtayı bağlar.|boğaziçi köprüsü iki kıtayı bağlar.
+Ödevimi bitirdikten sonra oyun oynarım.|Ödevimi bitirdikten Sonra oyun oynarım.
+Türkiye Büyük Millet Meclisi Ankara'dadır.|Türkiye büyük millet meclisi Ankara'dadır.
+Çalıkuşu romanını okudum.|çalıkuşu romanını okudum.
+Hasan Bey kapıyı açtı.|hasan Bey kapıyı açtı.
+Bu yıl Mersin'de tatil yapacağız.|Bu yıl mersin'de tatil yapacağız.
+Elif Minecraft'ta ev yaptı.|Elif minecraft'ta ev yaptı.
+Cem Roblox'ta yeni bir oyun kurdu.|cem roblox'ta yeni bir oyun kurdu.
+Çocuklar cumartesi parka gitti.|Çocuklar Cumartesi parka gitti.
+Tatilimiz ağustos ayında başlıyor.|Tatilimiz Ağustos ayında başlıyor.
+Fenerbahçe maçı kazandı.|fenerbahçe maçı kazandı.
+Kuzey Kutbu çok soğuktur.|kuzey kutbu çok soğuktur.
+Karşıyaka İzmir'in bir ilçesidir.|karşıyaka İzmir'in bir ilçesidir.
+Mavi renk bana huzur verir.|Mavi Renk bana huzur verir.
+Müdürümüz Selim Bey bizi çağırdı.|müdürümüz selim bey bizi çağırdı.
+Anadolu çok eski bir yurttur.|anadolu çok eski bir yurttur.
+`,'Cümleler büyük harfle başlar; özel adlar (kişi, yer, kitap, oyun adı) büyük harfle yazılır. Gün ve ay adları cümle ortasında küçük yazılır.');
+
+/* --- DE / DA --- */
+const dadaHint=t=>t==='B'?'İpucu: Buradaki “de/da”, “dahi, ayrıca” anlamı katan bağlaçtır.':'İpucu: Buradaki “de/da”, bulunma (yer) bildiren bir ektir.';
+addPairs('de / da',Q_CORRECT,`
+Ben de seninle geliyorum.|Bende seninle geliyorum.|B
+Kalem çantanda.|Kalem çantan da.|L
+Ali de maça geldi.|Alide maça geldi.|B
+Evde kimse yok.|Ev de kimse yok.|L
+Sen de bizimle oyna.|Sende bizimle oyna.|B
+Okulda arkadaşlarımla oynadım.|Okul da arkadaşlarımla oynadım.|L
+Bu oyunu ben de oynamak istiyorum.|Bu oyunu bende oynamak istiyorum.|B
+Madende elmas bulduk.|Maden de elmas bulduk.|L
+Elif de Zeynep de geldi.|Elifde Zeynepde geldi.|B
+Dün gece uyuyamadım da sabah geç kalktım.|Dün gece uyuyamadımda sabah geç kalktım.|B
+Kitapta güzel resimler var.|Kitap ta güzel resimler var.|L
+Ben de bir dilek tuttum.|Bende bir dilek tuttum.|B
+Bahçede çiçekler açmış.|Bahçe de çiçekler açmış.|L
+Sınıfta herkes sessizdi.|Sınıf ta herkes sessizdi.|L
+Annem de babam da öğretmen.|Annemde babamda öğretmen.|B
+Gökyüzünde bulutlar var.|Gökyüzün de bulutlar var.|L
+Telefonda konuşuyor.|Telefon da konuşuyor.|L
+Bu soruyu sen de çözebilirsin.|Bu soruyu sende çözebilirsin.|B
+Çantamda üç kalem var.|Çantam da üç kalem var.|L
+Yarın ben de geleceğim.|Yarın bende geleceğim.|B
+Denizde yüzmeyi çok severim.|Deniz de yüzmeyi çok severim.|L
+Sokakta top oynadık.|Sokak ta top oynadık.|L
+Hem akıllı hem de çalışkan.|Hem akıllı hemde çalışkan.|B
+Mutfakta yemek pişiyor.|Mutfak ta yemek pişiyor.|L
+Kedi de köpek de bizimle geldi.|Kedide köpekde bizimle geldi.|B
+Sen de haklısın.|Sende haklısın.|B
+Şehirde trafik yoğundu.|Şehir de trafik yoğundu.|L
+Kutuda iki elma kaldı.|Kutu da iki elma kaldı.|L
+Ben bu filmi izledim, sen de izle.|Ben bu filmi izledim, sende izle.|B
+Bahçede kedi, evde köpek var.|Bahçe de kedi, ev de köpek var.|L
+Arkadaşım da bizimle geldi.|Arkadaşımda bizimle geldi.|B
+Dolapta hiç süt kalmamış.|Dolap ta hiç süt kalmamış.|L
+Müzede eski eserler gördük.|Müze de eski eserler gördük.|L
+Bu kitap da güzelmiş.|Bu kitapda güzelmiş.|B
+Sen de mi geliyorsun?|Sende mi geliyorsun?|B
+Bugün de yağmur yağıyor.|Bugünde yağmur yağıyor.|B
+Masada kitaplar duruyor.|Masa da kitaplar duruyor.|L
+Ben de bir elmas istiyorum.|Bende bir elmas istiyorum.|B
+Köyde hava temizdir.|Köy de hava temizdir.|L
+Ödevi de yaptım, odamı da topladım.|Ödevide yaptım, odamıda topladım.|B
+Ormanda yürüyüş yaptık.|Orman da yürüyüş yaptık.|L
+Yolda eski bir arkadaşımı gördüm.|Yol da eski bir arkadaşımı gördüm.|L
+Kardeşim de oyuna katıldı.|Kardeşimde oyuna katıldı.|B
+Kırmızı da güzel, mavi de güzel.|Kırmızıda güzel, mavide güzel.|B
+Tepede küçük bir ev var.|Tepe de küçük bir ev var.|L
+`,'Bağlaç olan “de/da” her zaman ayrı yazılır (parmağınla kapat: anlam bozulmuyorsa ayrı). Bulunma eki “-de/-da” ise kelimeye bitişik yazılır.',dadaHint);
+
+/* --- MI --- */
+addPairs('Soru eki mi',Q_CORRECT,`
+Bana robux verir misin?|Bana robux verirmisin?
+Sen de geliyor musun?|Sen de geliyormusun?
+Okula gittin mi?|Okula gittinmi?
+Bu kalem senin mi?|Bu kalem seninmi?
+Hava soğuk mu?|Hava soğukmu?
+Yemek yedin mi?|Yemek yedinmi?
+Çok mu yoruldun?|Çokmu yoruldun?
+Bunu sen mi yaptın?|Bunu senmi yaptın?
+Elmas buldun mu?|Elmas buldunmu?
+Oyun bitti mi?|Oyun bittimi?
+Annen evde mi?|Annen evdemi?
+Gelecek misiniz?|Gelecekmisiniz?
+Bu ödev zor mu?|Bu ödev zormu?
+Kitabı okudun mu?|Kitabı okudunmu?
+Sınıfta mısın?|Sınıftamısın?
+Bana yardım eder misin?|Bana yardım edermisin?
+Bu film güzel mi?|Bu film güzelmi?
+Dün gece uyudun mu?|Dün gece uyudunmu?
+Yarın gelir misiniz?|Yarın gelirmisiniz?
+Sen öğrenci misin?|Sen öğrencimisin?
+Ben mi haklıyım?|Benmi haklıyım?
+Bu çanta yeni mi?|Bu çanta yenimi?
+Kapıyı kapattın mı?|Kapıyı kapattınmı?
+Su içmek ister misin?|Su içmek istermisin?
+Biraz bekler misin?|Biraz beklermisin?
+Yalan mı söylüyorsun?|Yalanmı söylüyorsun?
+Eve gittin mi?|Eve gittinmi?
+Hava yağmurlu mu olacak?|Hava yağmurlumu olacak?
+Bunu duydun mu?|Bunu duydunmu?
+Çocuklar parkta mı?|Çocuklar parktamı?
+Sen de bize katılır mısın?|Sen de bize katılırmısın?
+Ödevini yaptın mı?|Ödevini yaptınmı?
+Bana bir şey söyler misin?|Bana bir şey söylermisin?
+Dondurma sever misin?|Dondurma severmisin?
+Bu oyun eğlenceli mi?|Bu oyun eğlencelimi?
+`,'Soru eki “mı/mi/mu/mü” her zaman ayrı yazılır; ancak ekler (-sin, -siniz vb.) soru ekine bitişir: “verir misin”.');
+
+/* --- KI --- */
+const kiHint=t=>t==='B'?'İpucu: Buradaki “ki” bağlaç görevindedir.':t==='E'?'İpucu: Buradaki “-ki” ilgi (aitlik) ekidir.':'İpucu: Bu sözcük kalıplaşmış, tek parça bir sözcüktür.';
+addPairs('ki',Q_CORRECT,`
+Öyle yoruldum ki hemen uyudum.|Öyle yoruldumki hemen uyudum.|B
+Masadaki kalemi aldım.|Masada ki kalemi aldım.|E
+Sanırım ki yarın yağmur yağacak.|Sanırımki yarın yağmur yağacak.|B
+Evdeki herkes uyuyordu.|Evde ki herkes uyuyordu.|E
+Çünkü hava çok soğuktu.|Çün ki hava çok soğuktu.|W
+Belki yarın gelirler.|Bel ki yarın gelirler.|W
+Sanki hiçbir şey olmamış gibiydi.|San ki hiçbir şey olmamış gibiydi.|W
+Erken kalktım ki derse yetişeyim.|Erken kalktımki derse yetişeyim.|B
+Dünkü maçı izledin mi?|Dün ki maçı izledin mi?|E
+Bahçedeki çiçekler açmış.|Bahçede ki çiçekler açmış.|E
+Öyle güzel bir gün ki hiç eve girmek istemedim.|Öyle güzel bir günki hiç eve girmek istemedim.|B
+Benimki daha büyük.|Benim ki daha büyük.|E
+Sandığımız gibi değil ki!|Sandığımız gibi değilki!|B
+Çantadaki kitap benim.|Çantada ki kitap benim.|E
+Sınıftaki arkadaşlar gürültü yapıyor.|Sınıfta ki arkadaşlar gürültü yapıyor.|E
+Bilirsin ki ben yalan söylemem.|Bilirsinki ben yalan söylemem.|B
+Yarınki sınav kolay olacak.|Yarın ki sınav kolay olacak.|E
+O kadar korktum ki sesim çıkmadı.|O kadar korktumki sesim çıkmadı.|B
+Şimdiki zaman çok farklı.|Şimdi ki zaman çok farklı.|E
+Duydum ki yarın tatil olacakmış.|Duydumki yarın tatil olacakmış.|B
+Yukarıdaki resme bak.|Yukarıda ki resme bak.|E
+Biliyorsun ki ben her zaman yanındayım.|Biliyorsunki ben her zaman yanındayım.|B
+Sizinki hangisi?|Sizin ki hangisi?|E
+Duvardaki saat durmuş.|Duvarda ki saat durmuş.|E
+Öyle bir bağırdı ki herkes korktu.|Öyle bir bağırdıki herkes korktu.|B
+`,'Bağlaç olan “ki” ayrı yazılır; ilgi eki “-ki” ve “çünkü, sanki, belki” gibi kalıplaşmış sözcüklerdeki “ki” bitişik yazılır.',kiHint);
+
+/* --- KESME İŞARETİ --- */
+addPairs('Kesme İşareti',Q_CORRECT,`
+Ankara'ya gittik.|Ankaraya gittik.
+Ali'nin kalemi kırıldı.|Alinin kalemi kırıldı.
+Kitabı Ayşe'ye verdim.|Kitabı Ayşeye verdim.
+Okula yürüyerek gittim.|Okul'a yürüyerek gittim.
+Zeynep'in çantası yeni.|Zeynepin çantası yeni.
+Evden erken çıktım.|Ev'den erken çıktım.
+Mehmet'e mektup yazdım.|Mehmete mektup yazdım.
+Kitapları masaya koydum.|Kitap'ları masaya koydum.
+İstanbul'dan geldik.|İstanbuldan geldik.
+Arkadaşım Roblox'ta oynuyor.|Arkadaşım Robloxta oynuyor.
+Minecraft'ta ev yaptım.|Minecraftta ev yaptım.
+Çocuklar bahçeye koştu.|Çocuklar bahçe'ye koştu.
+Elif'in kedisi kaçtı.|Elifin kedisi kaçtı.
+İzmir'de yaşıyoruz.|İzmirde yaşıyoruz.
+Annem pazara gitti.|Annem pazar'a gitti.
+Murat'ı çok severim.|Muratı çok severim.
+Öğretmenimiz Cem'e kitap verdi.|Öğretmenimiz Ceme kitap verdi.
+Kediler sütü sever.|Kediler süt'ü sever.
+Ege'de hava sıcak.|Egede hava sıcak.
+Defterler sırada duruyor.|Defter'ler sırada duruyor.
+Aslı'nın evine gittik.|Aslının evine gittik.
+Toprağı kazdım.|Toprak'ı kazdım.
+Van'a uçakla gideceğiz.|Vana uçakla gideceğiz.
+Hasan'la sinemaya gittik.|Hasanla sinemaya gittik.
+Dağda kamp kurduk.|Dağ'da kamp kurduk.
+`,'Özel adlara gelen ekler kesme işaretiyle ayrılır; cins (ortak) adlarda kesme işareti kullanılmaz.');
+
+/* --- YAZIM --- */
+addPairs('Yazım Kuralı','Hangisi doğru yazılmıştır?',`
+yalnız|yanlız
+yanlış|yalnış
+herkes|herkez
+hiçbir|hiç bir
+birçok|bir çok
+birkaç|bir kaç
+şöyle|şöle
+perşembe|perşenbe
+çarşamba|çarşanba
+cumartesi|cumaertesi
+her şey|herşey
+hiçbir şey|hiçbirşey
+ya da|yada
+herhangi bir|herhangibir
+bugün|bu gün
+sonbahar|son bahar
+ilkbahar|ilk bahar
+öğretmen|öğrentmen
+şimdilik|şimdelik
+gerçekten|gerçekden
+sürpriz|süpriz
+malzeme|mazleme
+tehlike|tehlüke
+şoför|şöför
+hastane|hastahane
+sandalye|sendalye
+bilgisayar|bilgisayer
+yoğurt|yogurt
+eğlence|eylence
+karnabahar|karnıbahar
+meyve|meyva
+mümkün|mümkin
+ıspanak|ispanak
+kalabalık|kalabalıg
+afiyet olsun|afiyetolsun
+herkesin|herkezin
+hiçbiri|hiç biri
+yapboz|yap boz
+özellikle|özelikle
+şampiyon|şampiyun
+pencere|pancere
+elbette|elbete
+kahvaltı|kahvalti
+yüzyıl|yüz yıl
+ağabey|ağabay
+mutlaka|mutlakka
+kırtasiye|kırtaziye
+doğru|doğrü
+köprü|köpru
+ortaokul|orta okul
+ilkokul|ilk okul
+o kadar|okadar
+ne zaman|nezaman
+bir şey|birşey
+bir de|birde
+hiçbir zaman|hiçbirzaman
+yarım saat|yarımsaat
+her zaman|herzaman
+her gün|hergün
+`,'Bu sözcüğün doğru yazımını ezberlemek en iyi yöntemdir. Bazı sözcükler bitişik (birçok, hiçbir), bazıları ayrı (her şey, ya da) yazılır.');
+
+/* --- NOKTALAMA --- */
+const SIGN={'.':'Nokta ( . )','?':'Soru işareti ( ? )','!':'Ünlem ( ! )',',':'Virgül ( , )',':':'İki nokta ( : )'};
+L(`
+Yarın okula gideceğiz|.|!
+Saat kaç oldu|?|.
+Yaşasın, kazandık|!|.
+Bu akşam bize gelir misin|?|.
+Eyvah, ev yanıyor|!|.
+Ben kitap okumayı severim|.|?
+Nereye gidiyorsun|?|!
+Dikkat et, düşeceksin|!|.
+Annem akşam yemeği hazırladı|.|!
+Kaç kardeşsin|?|.
+Çok yaşa, şampiyon|!|?
+Okul saat sekizde başlar|.|?
+Hangi renk seni daha çok mutlu eder|?|.
+Ne kadar güzel bir manzara|!|.
+Kapıyı kim açtı|?|.
+İmdat, yardım edin|!|.
+Kedim her sabah süt içer|.|!
+Bu soruyu kim çözebilir|?|!
+Hadi, çabuk olalım|!|.
+Dün akşam film izledik|.|?
+Ödevini bitirdin mi|?|.
+Aman Allahım, ne büyük bir canavar|!|.
+Ders çalışmak çok önemlidir|.|!
+Yarın hava yağmurlu olacak mı|?|.
+Bravo, çok başarılısın|!|.
+Elmas kazmasını çantama koydum|.|?
+Neden geç kaldın|?|.
+Sessiz ol, canavar yaklaşıyor|!|.
+`).forEach(r=>BANK.push({cat:'Noktalama',q:'Cümlenin sonuna hangi işaret gelmeli?\n“'+r[0]+' ( )”',hint:'',note:'Soru anlamı taşıyan cümlenin sonuna soru işareti, duygu ve heyecan bildirene ünlem, haber verene nokta konur.',opts:[SIGN[r[1]],SIGN[r[2]]]}));
+L(`
+Pazardan elma ( ) armut ve muz aldım|,|:
+Annem şöyle dedi ( ) “Erken yat.”|:|,
+Ali ( ) buraya gel|,|:
+Alışveriş listesi ( ) süt, ekmek, peynir|:|,
+Ayşe ( ) Mehmet ve Can sınıfa girdi|,|:
+Evet ( ) haklısın|,|:
+Sınıfta üç şey vardı ( ) tahta, sıra ve dolap|:|,
+Merhaba ( ) nasılsın|,|:
+Kırmızı ( ) mavi ve yeşil renkleri sevdim|,|:
+Öğretmen sordu ( ) “Ödevi kim yaptı?”|:|,
+`).forEach(r=>BANK.push({cat:'Noktalama',q:'Cümlede ( ) yerine hangi işaret gelmeli?\n“'+r[0]+'”',hint:'',note:'Sıralanan sözcükler ve hitaplar virgülle ayrılır; açıklama ve konuşma öncesi iki nokta konur.',opts:[SIGN[r[1]],SIGN[r[2]]]}));
+
+/* ========== OYUN MOTORU ========== */
+const STAGE=10;
+let queue=[],i=0,errors=0,streak=0,best=0,lock=false,N=0,stageStart=0,stageLen=0,missed={};
+const $=id=>document.getElementById(id);
+function shuffle(a){for(let k=a.length-1;k>0;k--){const j=Math.floor(Math.random()*(k+1));[a[k],a[j]]=[a[j],a[k]];}return a;}
+
+$('bank-info').innerText='Soru bankasında toplam '+BANK.length+' farklı soru var: büyük harf, de/da, soru eki, ki, kesme işareti, yazım kuralı ve noktalama.';
+
+function startGame(n){
+  N=n===0?BANK.length:Math.min(n,BANK.length);
+  queue=shuffle(BANK.slice()).slice(0,N);
+  i=0;errors=0;streak=0;best=0;lock=false;missed={};
+  $('start-screen').style.display='none';
+  $('game-screen').style.display='block';
+  beginStage();
+}
+function beginStage(){
+  stageStart=i;
+  stageLen=Math.min(STAGE,N-i);
+  drawMap();
+  loadQuestion();
+}
+function drawMap(lava){
+  const pos=i-stageStart;
+  const g=$('grid');g.innerHTML='';
+  for(let c=0;c<=stageLen;c++){
+    const d=document.createElement('div');d.className='cell';
+    if(c===pos){ if(lava){d.className+=' lava';d.innerHTML='🔥';} else d.innerHTML=(c===stageLen)?'🧑‍🦱':'🧑‍🦱'; }
+    else if(c===stageLen){d.className+=' diamond';d.innerHTML='💎';}
+    else if(c<pos){d.className+=' done';d.innerHTML='🟫';}
+    else d.innerHTML='🟩';
+    g.appendChild(d);
+  }
+  const totalStages=Math.ceil(N/STAGE),curStage=Math.floor(stageStart/STAGE)+1;
+  $('stage-title').innerText='Bölüm '+curStage+' / '+totalStages;
+  $('bar-fill').style.width=(i/N*100)+'%';
+  $('st-q').innerText=Math.min(i,N)+' / '+N;
+  $('st-err').innerText=errors;
+  $('st-streak').innerText=streak;
+}
+function loadQuestion(){
+  lock=false;
+  $('message').innerText='';$('message').className='';
+  if(i>=N){return finish();}
+  const q=queue[i];
+  $('qtitle').innerText='Soru '+(i+1)+' / '+N;
+  $('qcat').innerText=q.cat;
+  $('hint').innerText=q.hint||'';
+  $('qtext').innerText=q.q;
+  const order=shuffle([0,1]);
+  const box=$('options');box.innerHTML='';
+  order.forEach(idx=>{
+    const b=document.createElement('button');b.className='btn-ans';b.innerText=q.opts[idx];
+    b.dataset.ok=idx===0?'1':'0';
+    b.onclick=()=>answer(b,idx===0);
+    box.appendChild(b);
+  });
+}
+function answer(btn,isRight){
+  if(lock)return;lock=true;
+  const q=queue[i],msg=$('message');
+  document.querySelectorAll('.btn-ans').forEach(b=>{b.disabled=true;if(b.dataset.ok==='1')b.classList.add('ok');});
+  if(isRight){
+    streak++;best=Math.max(best,streak);i++;
+    msg.className='success';msg.innerText='Doğru Cevap! 🟩 Karakterin 1 adım ilerledi!\n'+q.note;
+    drawMap();
+    if(i-stageStart>=stageLen){
+      msg.innerText='💎 Elması aldın! Bölüm tamamlandı!';
+      setTimeout(()=>{ if(i>=N) finish(); else beginStage(); },1500);
+    } else setTimeout(loadQuestion,1800);
+  } else {
+    btn.classList.add('bad');
+    errors++;streak=0;missed[q.cat]=(missed[q.cat]||0)+1;
+    msg.className='error';msg.innerText='Yanlış Cevap! 💥 Karakter lavlara düştü. Bölüm başa sarıyor!\nKural: '+q.note;
+    drawMap(true);
+    setTimeout(()=>{
+      i=stageStart;
+      const rest=shuffle(queue.slice(stageStart));
+      queue=queue.slice(0,stageStart).concat(rest);
+      drawMap();loadQuestion();
+    },3500);
+  }
+}
+function finish(){
+  drawMap();
+  $('bar-fill').style.width='100%';
+  $('stage-title').innerText='Elmaslara ulaştın!';
+  const acc=Math.round(N/(N+errors)*100);
+  let weak='';
+  const arr=Object.entries(missed).sort((a,b)=>b[1]-a[1]);
+  if(arr.length) weak='<p>En çok zorlandığın konular: <b>'+arr.slice(0,3).map(x=>x[0]+' ('+x[1]+')').join(', ')+'</b></p>';
+  $('game-screen').innerHTML='<h3 style="margin-top:0;color:#ffcc00;">🏆 OYUN BİTTİ!</h3>'
+   +'<p style="font-size:18px">Tebrikler! '+N+' soruyu tamamladın, imla canavarını yendin! 🎉</p>'
+   +'<p>Toplam hata: <b>'+errors+'</b> · En uzun doğru serisi: <b>'+best+'</b> · Doğruluk: <b>%'+acc+'</b></p>'+weak
+   +'<button class="btn-mode" onclick="location.reload()">🔁 Yeniden Oyna</button>';
+}
+drawMap();
+</script>
+</body>
+</html>
