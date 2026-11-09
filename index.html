@@ -28,15 +28,19 @@
   .btn-ans.bad { background:#cc2222; }
   .btn-mode { display:block; width:100%; background:#0088cc; color:#fff; border:none; padding:14px; margin:10px 0; font-size:17px; font-weight:bold; border-radius:6px; cursor:pointer; }
   .btn-mode:hover { background:#00aaee; }
-  #message { margin-top:12px; font-size:16px; font-weight:bold; min-height:48px; }
+  #message { margin-top:12px; font-size:16px; font-weight:bold; min-height:48px; white-space:pre-line; }
   .success { color:#4cd964; } .error { color:#ff5555; }
   #hint { color:#9ad; font-size:14px; margin:0 0 6px; min-height:18px; }
   #qtext { font-size:19px; font-weight:500; min-height:50px; white-space:pre-line; }
+  .result { display:flex; gap:12px; justify-content:center; margin:16px 0; }
+  .result div { flex:1; padding:14px; border-radius:8px; font-size:15px; }
+  .result b { display:block; font-size:34px; }
+  .r-ok { background:#1e7a34; } .r-bad { background:#a32020; }
 </style>
 </head>
 <body>
 <h1>🎮 ROB-CRAFT: İMLA KURALINI BİL, ELMASA İLERLE!</h1>
-<p class="sub">Her doğru cevap Steve'i elmasa yaklaştırır. Yanlış cevap lavlara düşürür ve bölümün başına döndürür!</p>
+<p class="sub">Her soru Steve'i elmasa yaklaştırır. Yanlış cevap sadece hata sayısına eklenir, oyun kesintisiz devam eder!</p>
 
 <div class="container">
   <div class="panel" id="map-panel">
@@ -45,7 +49,8 @@
     <div class="bar"><div id="bar-fill"></div></div>
     <div class="stats">
       <span>Soru: <b id="st-q">0</b></span>
-      <span>Hata: <b id="st-err">0</b></span>
+      <span>✅ Doğru: <b id="st-ok">0</b></span>
+      <span>❌ Yanlış: <b id="st-err">0</b></span>
       <span>Seri: <b id="st-streak">0</b></span>
     </div>
   </div>
@@ -385,7 +390,7 @@ Kırmızı ( ) mavi ve yeşil renkleri sevdim|,|:
 
 /* ========== OYUN MOTORU ========== */
 const STAGE=10;
-let queue=[],i=0,errors=0,streak=0,best=0,lock=false,N=0,stageStart=0,stageLen=0,missed={};
+let queue=[],i=0,errors=0,correct=0,streak=0,best=0,lock=false,N=0,stageStart=0,stageLen=0,missed={};
 const $=id=>document.getElementById(id);
 function shuffle(a){for(let k=a.length-1;k>0;k--){const j=Math.floor(Math.random()*(k+1));[a[k],a[j]]=[a[j],a[k]];}return a;}
 
@@ -394,7 +399,7 @@ $('bank-info').innerText='Soru bankasında toplam '+BANK.length+' farklı soru v
 function startGame(n){
   N=n===0?BANK.length:Math.min(n,BANK.length);
   queue=shuffle(BANK.slice()).slice(0,N);
-  i=0;errors=0;streak=0;best=0;lock=false;missed={};
+  i=0;errors=0;correct=0;streak=0;best=0;lock=false;missed={};
   $('start-screen').style.display='none';
   $('game-screen').style.display='block';
   beginStage();
@@ -410,7 +415,7 @@ function drawMap(lava){
   const g=$('grid');g.innerHTML='';
   for(let c=0;c<=stageLen;c++){
     const d=document.createElement('div');d.className='cell';
-    if(c===pos){ if(lava){d.className+=' lava';d.innerHTML='🔥';} else d.innerHTML=(c===stageLen)?'🧑‍🦱':'🧑‍🦱'; }
+    if(c===pos){ if(lava){d.className+=' lava';d.innerHTML='🔥';} else d.innerHTML='🧑‍🦱'; }
     else if(c===stageLen){d.className+=' diamond';d.innerHTML='💎';}
     else if(c<pos){d.className+=' done';d.innerHTML='🟫';}
     else d.innerHTML='🟩';
@@ -420,6 +425,7 @@ function drawMap(lava){
   $('stage-title').innerText='Bölüm '+curStage+' / '+totalStages;
   $('bar-fill').style.width=(i/N*100)+'%';
   $('st-q').innerText=Math.min(i,N)+' / '+N;
+  $('st-ok').innerText=correct;
   $('st-err').innerText=errors;
   $('st-streak').innerText=streak;
 }
@@ -441,42 +447,48 @@ function loadQuestion(){
     box.appendChild(b);
   });
 }
+/* Cevaptan sonra bir sonraki adıma geç (doğru da yanlış da ilerler) */
+function advance(delay){
+  const msg=$('message');
+  if(i-stageStart>=stageLen){
+    msg.className='success';
+    msg.innerText='💎 Elmasa ulaştın! Bölüm tamamlandı!';
+    setTimeout(()=>{ if(i>=N) finish(); else beginStage(); },1500);
+  } else setTimeout(loadQuestion,delay);
+}
 function answer(btn,isRight){
   if(lock)return;lock=true;
   const q=queue[i],msg=$('message');
   document.querySelectorAll('.btn-ans').forEach(b=>{b.disabled=true;if(b.dataset.ok==='1')b.classList.add('ok');});
   if(isRight){
-    streak++;best=Math.max(best,streak);i++;
+    correct++;streak++;best=Math.max(best,streak);i++;
     msg.className='success';msg.innerText='Doğru Cevap! 🟩 Karakterin 1 adım ilerledi!\n'+q.note;
     drawMap();
-    if(i-stageStart>=stageLen){
-      msg.innerText='💎 Elması aldın! Bölüm tamamlandı!';
-      setTimeout(()=>{ if(i>=N) finish(); else beginStage(); },1500);
-    } else setTimeout(loadQuestion,1800);
+    advance(1800);
   } else {
     btn.classList.add('bad');
     errors++;streak=0;missed[q.cat]=(missed[q.cat]||0)+1;
-    msg.className='error';msg.innerText='Yanlış Cevap! 💥 Karakter lavlara düştü. Bölüm başa sarıyor!\nKural: '+q.note;
+    msg.className='error';msg.innerText='Yanlış Cevap! 💥 Lavdan zor kurtuldun, devam!\nKural: '+q.note;
     drawMap(true);
     setTimeout(()=>{
-      i=stageStart;
-      const rest=shuffle(queue.slice(stageStart));
-      queue=queue.slice(0,stageStart).concat(rest);
-      drawMap();loadQuestion();
-    },3500);
+      i++;
+      drawMap();
+      advance(0);
+    },3000);
   }
 }
 function finish(){
   drawMap();
   $('bar-fill').style.width='100%';
   $('stage-title').innerText='Elmaslara ulaştın!';
-  const acc=Math.round(N/(N+errors)*100);
+  const acc=Math.round(correct/N*100);
   let weak='';
   const arr=Object.entries(missed).sort((a,b)=>b[1]-a[1]);
   if(arr.length) weak='<p>En çok zorlandığın konular: <b>'+arr.slice(0,3).map(x=>x[0]+' ('+x[1]+')').join(', ')+'</b></p>';
   $('game-screen').innerHTML='<h3 style="margin-top:0;color:#ffcc00;">🏆 OYUN BİTTİ!</h3>'
-   +'<p style="font-size:18px">Tebrikler! '+N+' soruyu tamamladın, imla canavarını yendin! 🎉</p>'
-   +'<p>Toplam hata: <b>'+errors+'</b> · En uzun doğru serisi: <b>'+best+'</b> · Doğruluk: <b>%'+acc+'</b></p>'+weak
+   +'<p style="font-size:18px">Tebrikler! '+N+' soruyu tamamladın! 🎉</p>'
+   +'<div class="result"><div class="r-ok">✅ Doğru<b>'+correct+'</b></div><div class="r-bad">❌ Yanlış<b>'+errors+'</b></div></div>'
+   +'<p>En uzun doğru serisi: <b>'+best+'</b> · Başarı: <b>%'+acc+'</b></p>'+weak
    +'<button class="btn-mode" onclick="location.reload()">🔁 Yeniden Oyna</button>';
 }
 drawMap();
